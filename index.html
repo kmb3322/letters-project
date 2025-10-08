@@ -60,6 +60,17 @@
         text-decoration: none;
         font-size: 9px;
       }
+      /* title */
+      .top-title {
+        position: fixed;
+        left: 50%;
+        top: 22px;
+        transform: translateX(-50%);
+        color: #111;
+        font-size: 10px;
+        z-index: 3;
+        pointer-events: none;
+      }
         /* for youtube */
       #center {
         position: fixed;
@@ -88,6 +99,7 @@
     </style>
   </head>
   <body>
+    <div class="top-title">timetogotobed</div>
     <div id="preset" aria-hidden="true">
       <div class="word">Moon</div>
       <div class="word">Sun</div>
