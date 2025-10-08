@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>timetogotobed</title>
+    <style>
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: #F0F0F0;
+        color: #111;
+        line-height: 1.35;
+        font-family: "Apple Garamond", serif;
+        font-size: 10pt;
+      }
+
+      /* Left typing */
+      #preset {
+        position: fixed;
+        left: 5vw;
+        top: 50%;
+        transform: translateY(-50%);
+        text-align: left;
+        color: #111;
+      }
+      #preset .word { font-size: 10pt; line-height: 1.2; margin: 6px 0; }
+
+      /* Right typing */
+      #output {
+        position: fixed;
+        right: 5vw;
+        top: 50%;
+        transform: translateY(-50%);
+        text-align: right;
+        padding: 0;
+        min-height: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        word-wrap: break-word;
+        max-width: 44vw;
+        font-size: 10pt;
+      }
+      #output span { display: inline-block; margin-left: 2px; }
+      #output img, #output video {
+        display: inline-block;
+        vertical-align: middle;
+        margin: 6px 0 6px 6px;
+        border-radius: 6px;
+      }
+
+      /* minbeom link */
+      .site-link {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%);
+        color: #111;
+        text-decoration: none;
+        font-size: 9px;
+      }
+        /* for youtube */
+      #center {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        display: none;
+        z-index: 2;
+        pointer-events: none;
+      }
+      #center.active { display: block; }
+      #center iframe {
+        display: block;
+        width: min(560px, 80vw);
+        aspect-ratio: 16 / 9;
+        height: auto;
+        border: 0;
+        pointer-events: auto; 
+      }
+      #center img {
+        display: block;
+        width: min(420px, 60vw);
+        height: auto;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="preset" aria-hidden="true">
+      <div class="word">Moon</div>
+      <div class="word">Sun</div>
+      <div class="word">Star</div>
+    </div>
+    <div id="output" aria-live="polite"></div>
+    <div id="center" aria-hidden="true"></div>
+    <a class="site-link" href="https://minbeomkim.com" target="_blank" rel="noopener">MinbeomKim.com</a>
+
+    <script>
+      const outputEl = document.getElementById("output");
+      const presetEl = document.getElementById("preset");
+      let currentInput = "";
+
+      function addDomElement(tag, attrs) {
+        const el = document.createElement(tag);
+        if (attrs) {
+          for (const k in attrs) {
+            if (k === "text") {
+              el.textContent = attrs[k];
+            } else {
+              el.setAttribute(k, attrs[k]);
+            }
+          }
+        }
+        outputEl.appendChild(el);
+        return el;
+      }
+
+      function playSound(url) {
+        try {
+          const audio = new Audio(url);
+          audio.play().catch(() => {});
+        } catch (_) {}
+      }
+
+      document.addEventListener("keydown", function (event) {
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const text = currentInput.trim();
+          if (text) {
+            const div = document.createElement("div");
+            div.className = "word";
+            div.textContent = text;
+            presetEl.appendChild(div);
+            currentInput = "";
+            outputEl.innerHTML = ""; // after enter
+
+            // word based action
+            const normalized = text.toLowerCase();
+            const centerEl = document.getElementById("center");
+            if (normalized === "moon") {
+              centerEl.innerHTML = "";
+              const iframe = document.createElement("iframe");
+              iframe.setAttribute("width", "560");
+              iframe.setAttribute("height", "315");
+              iframe.setAttribute("src", "https://www.youtube.com/embed/fhYpzlqw7lY?si=yvEVYZgbojvFcJJP&autoplay=1&start=33&controls=0&modestbranding=1&rel=0&playsinline=1");
+              iframe.setAttribute("title", "YouTube video player");
+              iframe.setAttribute("frameborder", "0");
+              iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
+              iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+              iframe.setAttribute("allowfullscreen", "");
+              centerEl.appendChild(iframe);
+              centerEl.classList.add("active");
+            } else if (normalized === "star") {
+              centerEl.innerHTML = "";
+              const img = document.createElement("img");
+              img.setAttribute("src", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHo5dTI0cHM0ZG1tM3N5ZWR6bHM2MTYwYm1pNWt6dDgzd25yajgybyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hXTsVGndgr1oMC2F9t/giphy.gif");
+              img.setAttribute("alt", "sleep gif");
+              centerEl.appendChild(img);
+              centerEl.classList.add("active");
+            } else if (normalized === "sun") {
+              playSound("https://actions.google.com/sounds/v1/human_voices/male_chuckling.ogg?hl=ko");
+            }
+          }
+        } else if (event.key === "Backspace") {
+          event.preventDefault();
+          if (currentInput.length) {
+            currentInput = currentInput.slice(0, -1);
+            if (outputEl.lastChild) outputEl.removeChild(outputEl.lastChild);
+          } else if (outputEl.lastChild) {
+            outputEl.removeChild(outputEl.lastChild);
+          }
+        } else if (event.key.length === 1) {
+          currentInput += event.key;
+          addDomElement("span", { text: event.key });
+          // hide
+          const centerEl = document.getElementById("center");
+          if (centerEl.classList.contains("active")) {
+            centerEl.classList.remove("active");
+            centerEl.innerHTML = "";
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
