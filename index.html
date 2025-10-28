@@ -4,62 +4,71 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>timetogotobed</title>
+
+    <!-- Ubuntu Mono for terminal -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono&display=swap"
+      rel="stylesheet"
+    />
+
     <style>
-      html, body { height: 100%; }
-      body {
+      html, body { 
+        height: 100%; 
         margin: 0;
+        overflow: hidden;
+      }
+      body {
         background: #e2e2e2;
         color: #111;
         line-height: 1.35;
         font-family: "Apple Garamond", serif;
         font-size: 10pt;
+        transition: background-color 1.5s ease;
+      }
+      body.dark {
+        background: #000;
+        color: #fff;
       }
 
-      /* Left typing */
-      #preset {
+      /* sun 모드에서의 약한 노란 글로우 */
+      body.sun-glow {
+        background: radial-gradient(
+          circle at 50% 50%,
+          rgba(255,220,100,0.18) 0%,
+          rgba(0,0,0,1) 70%
+        );
+        color: #fff;
+      }
+
+      #canvas-container {
         position: fixed;
-        left: 5vw;
-        top: 50%;
-        transform: translateY(-50%);
-        text-align: left;
-        color: #111;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
       }
-      #preset .word { font-size: 10pt; line-height: 1.2; margin: 6px 0; }
-
-      /* Right typing */
-      #output {
-        position: fixed;
-        right: 5vw;
-        top: 50%;
-        transform: translateY(-50%);
-        text-align: right;
-        padding: 0;
-        min-height: 0;
-        background: transparent;
-        border: 0;
-        border-radius: 0;
-        word-wrap: break-word;
-        max-width: 44vw;
-        font-size: 10pt;
-      }
-      #output span { display: inline-block; margin-left: 2px; }
-      #output img, #output video {
-        display: inline-block;
-        vertical-align: middle;
-        margin: 6px 0 6px 6px;
-        border-radius: 6px;
+      #canvas-container canvas {
+        transition: opacity 0.3s ease;
       }
 
-      /* minbeom link */
-      .site-link {
+      /* typing indicator: 현재 타이핑 중인 버퍼 */
+      #typing-indicator {
         position: fixed;
         left: 50%;
-        bottom: 22px;
+        bottom: 40px;
         transform: translateX(-50%);
         color: #111;
-        text-decoration: none;
-        font-size: 9px;
+        font-size: 14pt;
+        z-index: 10;
+        pointer-events: none;
+        min-height: 20px;
+        letter-spacing: 0.5px;
       }
+      body.dark #typing-indicator {
+        color: #fff;
+      }
+
       /* title */
       .top-title {
         position: fixed;
@@ -68,133 +77,1457 @@
         transform: translateX(-50%);
         color: #111;
         font-size: 10px;
-        z-index: 3;
+        z-index: 10;
         pointer-events: none;
       }
-        /* for youtube */
-      #center {
+      body.dark .top-title {
+        color: #fff;
+      }
+
+      /* preset words (left) */
+      #preset {
+        position: fixed;
+        left: 20px;
+        top: 20px;
+        z-index: 10;
+        color: #111;
+        font-size: 12px;
+        line-height: 1.6;
+        pointer-events: none;
+      }
+      body.dark #preset {
+        color: #fff;
+      }
+      #preset .word {
+        opacity: 0.75;
+      }
+
+      /* minbeom link */
+      .site-link {
+        position: fixed;
+        left: 50%;
+        bottom: 10px;
+        transform: translateX(-50%);
+        color: #111;
+        text-decoration: none;
+        font-size: 9px;
+        z-index: 10;
+      }
+      body.dark .site-link {
+        color: #fff;
+      }
+
+      /* bed 모드: 큰 침대 이미지 (2/3 viewport width, 상하 여백 조금 남김) */
+      #bed-wrapper {
         position: fixed;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
+        z-index: 6;
         display: none;
-        z-index: 2;
+        width: 66vw;
+        max-width: 66vw;
+        max-height: 80vh;
+      }
+      #bed-image {
+        width: 100%;
+        height: auto;
+        max-height: 80vh;
+        display: block;
+        object-fit: cover;
+        image-rendering: crisp-edges;
+        border: 0;
+      }
+
+      /* monolith: 날카로운 직사각형, 그림자 없음 */
+      #monolith {
+        position: fixed;
+        left: 50%;
+        top: 50%; /* 변경: bottom -> top */
+        transform: translate(-50%, -50%); /* 변경: X축 -> X,Y축 중앙 정렬 */
+        width: 0; /* 변경: 40px -> 0 */
+        height: 0;
+        background: linear-gradient(to bottom, #1a1a1a 0%, #000 100%);
+        z-index: 7;
+        /* 변경: width 트랜지션 추가 */
+        transition: width 0.08s linear, height 0.08s linear;
+        box-shadow: none;
+        display: none; /* bed 모드에서만 보임 */
+      }
+
+      /* blackout: 정사각형이 화면 전체로 팽창 */
+      #blackout {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 200vmax;
+        height: 200vmax;
+        background: #000;
+        transform: translate(-50%, -50%) scale(0);
+        transition: transform 0.6s cubic-bezier(0.2,0.8,0.4,1);
+        z-index: 900;
         pointer-events: none;
+        visibility: hidden;
       }
-      #center.active { display: block; }
-      #center iframe {
-        display: block;
-        width: min(560px, 80vw);
-        aspect-ratio: 16 / 9;
-        height: auto;
-        border: 0;
-        pointer-events: auto; 
+      #blackout.active {
+        visibility: visible;
+        transform: translate(-50%, -50%) scale(1);
       }
-      #center img {
+
+      /* terminal: 해커 스타일 Q/A */
+      #terminal {
+        position: fixed;
+        left: 20px;
+        top: 20px;
+        z-index: 1000;
+        color: #9aff6a;
+        font-family: "Ubuntu Mono", monospace;
+        font-size: 14px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        display: none;
+        max-width: 90vw;
+        max-height: 90vh;
+        overflow: auto;
+      }
+      #terminal.active {
         display: block;
-        width: min(420px, 60vw);
-        height: auto;
-        border: 0;
+      }
+      .term-line {
+        margin: 0;
+        padding: 0;
+      }
+      .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 1em;
+        background: #9aff6a;
+        margin-left: 2px;
+        animation: blink 0.8s step-start infinite;
+        vertical-align: bottom;
+      }
+      @keyframes blink {
+        50% { opacity: 0; }
+      }
+      
+      /* terminal exit hint */
+      #terminal-exit-hint {
+        position: fixed;
+        left: 50%;
+        bottom: 10px;
+        transform: translateX(-50%);
+        color: #9aff6a;
+        font-family: "Ubuntu Mono", monospace;
+        font-size: 11px;
+        z-index: 1001;
+        display: none;
+        opacity: 0.6;
+      }
+      #terminal-exit-hint.active {
+        display: block;
+      }
+      
+      /* center content for special words (Moon, Star) */
+      #center-content {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 950;
+        display: none;
+      }
+      #center-content.active {
+        display: block;
+      }
+      #center-content iframe {
+        border: none;
+      }
+      #center-content img {
+        max-width: 90vw;
+        max-height: 90vh;
+        display: block;
+      }
+      
+      /* back hint for center content */
+      #back-hint {
+        position: fixed;
+        left: 50%;
+        bottom: 30px;
+        transform: translateX(-50%);
+        color: #111;
+        font-size: 11px;
+        z-index: 951;
+        display: none;
+        opacity: 0.6;
+      }
+      body.dark #back-hint {
+        color: #fff;
+      }
+      #back-hint.active {
+        display: block;
       }
     </style>
   </head>
   <body>
     <div class="top-title">timetogotobed</div>
+
     <div id="preset" aria-hidden="true">
       <div class="word">Moon</div>
       <div class="word">Sun</div>
       <div class="word">Star</div>
+      <div class="word">Bed</div>
     </div>
-    <div id="output" aria-live="polite"></div>
-    <div id="center" aria-hidden="true"></div>
+
+    <!-- bed mode content -->
+    <div id="bed-wrapper">
+      <img id="bed-image" src="./public/bed.jpg" alt="bed scene" />
+    </div>
+
+    <div id="monolith"></div>
+
+    <!-- main 3D canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- typing buffer preview -->
+    <div id="typing-indicator"></div>
+
+    <!-- blackout square that expands to full screen -->
+    <div id="blackout"></div>
+
+    <!-- terminal overlay (after blackout fills) -->
+    <div id="terminal">
+      <div id="terminal-content"></div>
+    </div>
+    
+    <!-- terminal exit hint -->
+    <div id="terminal-exit-hint">press 'back to home' to home</div>
+    
+    <!-- center content for special words -->
+    <div id="center-content"></div>
+    
+    <!-- back hint -->
+    <div id="back-hint">press enter to back</div>
+
     <a class="site-link" href="https://minbeomkim.com" target="_blank" rel="noopener">MinbeomKim.com</a>
 
-    <script>
-      const outputEl = document.getElementById("output");
-      const presetEl = document.getElementById("preset");
-      let currentInput = "";
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+      }
+    </script>
 
-      function addDomElement(tag, attrs) {
-        const el = document.createElement(tag);
-        if (attrs) {
-          for (const k in attrs) {
-            if (k === "text") {
-              el.textContent = attrs[k];
-            } else {
-              el.setAttribute(k, attrs[k]);
-            }
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+      import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+      // ====== 3D 기본 세팅 ======
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        50,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      camera.position.z = 8;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+      const clock = new THREE.Clock();
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.enableZoom = false;
+      controls.enablePan = false;
+
+      // Light
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+      directionalLight.position.set(5, 5, 5);
+      scene.add(directionalLight);
+
+      // DOM refs
+      const typingIndicator = document.getElementById('typing-indicator');
+      const monolith = document.getElementById('monolith');
+      const bedWrapper = document.getElementById('bed-wrapper');
+      const bedImage = document.getElementById('bed-image');
+      const blackoutEl = document.getElementById('blackout');
+      const terminalEl = document.getElementById('terminal');
+      const terminalContentEl = document.getElementById('terminal-content');
+      const terminalExitHint = document.getElementById('terminal-exit-hint');
+      const centerContentEl = document.getElementById('center-content');
+      const backHint = document.getElementById('back-hint');
+
+      // ====== 구체 머티리얼 ======
+      const sphereBlackMaterial = new THREE.MeshStandardMaterial({
+        color: 0x000000,
+        roughness: 0.8,
+        metalness: 0.2,
+        emissive: 0x000000,
+        emissiveIntensity: 0.0
+      });
+
+      // sun 모드: 어두운 노란빛
+      const sphereSunMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffdd66,
+        roughness: 0.5,
+        metalness: 0.5,
+        emissive: 0xffaa22,
+        emissiveIntensity: 1.2
+      });
+
+      const sphereGeometry = new THREE.SphereGeometry(2, 64, 64);
+      const sphere = new THREE.Mesh(sphereGeometry, sphereBlackMaterial);
+      scene.add(sphere);
+      
+      // 모션 블러 효과를 위한 추가 구체들 (트레일 효과)
+      const motionBlurSpheres = [];
+      for (let i = 0; i < 3; i++) {
+        const blurMaterial = new THREE.MeshStandardMaterial({
+          color: 0x000000,
+          roughness: 0.8,
+          metalness: 0.2,
+          transparent: true,
+          opacity: 0.15 - i * 0.05
+        });
+        const blurSphere = new THREE.Mesh(sphereGeometry, blurMaterial);
+        scene.add(blurSphere);
+        motionBlurSpheres.push(blurSphere);
+      }
+      
+      // 이전 구체 위치 저장
+      let previousSphereRotations = [
+        new THREE.Euler(),
+        new THREE.Euler(),
+        new THREE.Euler()
+      ];
+
+      // ---- sphere scale state (scroll로 조절) ----
+      // [수정 1] 부드러운 스크롤을 위해 current와 target 분리
+      let currentSphereScale = 1.0;
+      let targetSphereScale = 1.0;
+      function applySphereScale() {
+        // [수정 1] currentSphereScale 사용
+        sphere.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
+      }
+      applySphereScale();
+
+      // 현재 구 표면에서 살짝 바깥쪽까지의 반경 계산
+      // base radius = 2 (sphereGeometry 생성 시 반지름)
+      function getCurrentSurfaceRadius() {
+        const baseR = 2;
+        // [수정 1] currentSphereScale 사용
+        return baseR * currentSphereScale + 0.2;
+      }
+
+      // 마우스 휠로 구체 크기 조절
+      window.addEventListener('wheel', (e) => {
+        // scroll up (deltaY < 0) => 구 커짐
+        // scroll down (deltaY > 0) => 구 작아짐
+        const step = 0.05;
+        if (e.deltaY < 0) {
+          // [수정 1] targetSphereScale 변경
+          targetSphereScale += step;
+        } else {
+          targetSphereScale -= step;
+        }
+        // 최소/최대 제한
+        targetSphereScale = Math.min(3.0, Math.max(0.3, targetSphereScale));
+        // [수정 1] applySphereScale() 호출 제거 (animate 루프에서 처리)
+      }, { passive: true });
+
+      // ====== 우주 별 (마인크래프트 픽셀스타) ======
+      function createPixelStarTexture() {
+        const size = 8;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = 'white';
+        // 중앙 4x4 하얀 픽셀 블록
+        ctx.fillRect(2, 2, 4, 4);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        return texture;
+      }
+      const starTexture = createPixelStarTexture();
+
+      // 큰 구 껍질 위에 별을 찍어서 배경 우주처럼
+      function createStars(count, radiusShell, sizePx) {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos((Math.random() * 2) - 1);
+
+          const x = radiusShell * Math.sin(phi) * Math.cos(theta);
+          const y = radiusShell * Math.sin(phi) * Math.sin(theta);
+          const z = radiusShell * Math.cos(phi);
+
+          positions[i * 3]     = x;
+          positions[i * 3 + 1] = y;
+          positions[i * 3 + 2] = z;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({
+          map: starTexture,
+          color: 0xffffff,
+          size: sizePx,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity: 1.0,
+          depthWrite: true,
+          blending: THREE.NormalBlending
+        });
+
+        const pts = new THREE.Points(geometry, material);
+        pts.userData = {
+          baseSize: sizePx
+        };
+        return pts;
+      }
+
+      // 우주 돔 (반경 30) 및 구체 내부 별
+      const starsGroup = new THREE.Group();
+      const tinyStars = createStars(1400, 30, 1.0);
+      const midStars  = createStars(400,  30, 1.5);
+      const bigStars  = createStars(90,   30, 2.5);
+      
+      starsGroup.add(tinyStars, midStars, bigStars);
+      scene.add(starsGroup);
+      
+      // 구체 내부 별들은 별도 그룹으로 관리 (구체 스케일에 따라 크기 조정)
+      // 반경 2.0: 구체 표면과 동일한 위치에 배치
+      const innerStarsGroup = new THREE.Group();
+      const innerTinyStars = createStars(300, 2.0, 2.5);
+      const innerMidStars  = createStars(100,  2.0, 3.5);
+      const innerBigStars  = createStars(50,   2.0, 5.0);
+      
+      // 별들이 구체를 뚫고 보이도록 renderOrder 설정
+      innerTinyStars.renderOrder = 999;
+      innerMidStars.renderOrder = 999;
+      innerBigStars.renderOrder = 999;
+      
+      // depthTest를 비활성화하여 항상 보이도록
+      innerTinyStars.material.depthTest = false;
+      innerMidStars.material.depthTest = false;
+      innerBigStars.material.depthTest = false;
+      
+      // 투명도를 60%로 설정 (연하게)
+      innerTinyStars.material.opacity = 0.6;
+      innerMidStars.material.opacity = 0.6;
+      innerBigStars.material.opacity = 0.6;
+      
+      innerStarsGroup.add(innerTinyStars, innerMidStars, innerBigStars);
+      scene.add(innerStarsGroup);
+
+      // ====== 상태 관리 ======
+      // 모드: 'space' | 'sun' | 'bed' | 'terminal'
+      let mode = 'space';
+
+      let currentInput = "";
+      let font = null;
+      let textMeshes = [];
+      let currentTextMesh = null;
+
+      let blackoutTriggered = false;
+      let monolithSize = 0; // [수정 3] 모노리스 크기 변수
+      
+      // 커스텀 색상 모드
+      let customColorMode = false;
+      let customColorMaterial = null;
+
+      // Terminal 상태
+      const API_ENDPOINT = "https://cim-back.vercel.app/chat/completions";
+      const answerPrefix = "> ";
+      let conversationHistory = []; // AI 대화 기록
+      let awaitingAnswer = false;
+      let userBuffer = "";
+      let pendingChars = [];
+      let typingTicker = null;
+      let currentAnswerEl = null;
+      let terminalAudio = null; // [수정 4] 오디오 객체 변수
+      let starAudio = null; // Star에서 재생되는 오디오
+      let questionIndex = 0; // 질문 인덱스 (0부터 시작)
+      const fixedQuestions = [
+        "...what's your name",
+        "...what was your favorite toy",
+        "...do you miss it?"
+      ]; // 고정 질문들
+
+      // ====== 폰트 로드 (구 위 텍스트용) ======
+      const fontLoader = new FontLoader();
+      fontLoader.load(
+        'https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json',
+        (loadedFont) => {
+          font = loadedFont;
+        }
+      );
+
+      // 구 표면 근처에 단어를 "찍는" 함수
+      // 중요: 텍스트 geometry의 size는 항상 고정(0.15)
+      //       sphereScale과 상관없이 일정한 실제 크기로 생성됨
+      function createTextOnSphere(text) {
+        if (!font) return;
+
+        const textGeometry = new TextGeometry(text, {
+          font: font,
+          size: 0.15,      // ← 항상 같은 크기
+          height: 0.02,
+        });
+
+        textGeometry.center();
+
+        const textMaterial = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          emissive: (mode === 'sun') ? 0xffffff : 0x000000,
+          emissiveIntensity: (mode === 'sun') ? 1.2 : 0
+        });
+
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+
+        // 현재 구의 (스케일 반영된) 반지름 + 약간 튀어나옴
+        const radius = getCurrentSurfaceRadius();
+
+        // 카메라 방향 벡터 구해서 그 방향에 찍기
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        cameraDirection.negate(); // 카메라 -> 구 중심 방향
+
+        // [수정 2] 정규화된 방향 벡터 저장
+        const normalizedDirection = cameraDirection.clone().normalize();
+        
+        textMesh.position.copy(cameraDirection.multiplyScalar(radius));
+        
+        // 구의 중심에서 바깥쪽을 바라보도록 (180도 회전)
+        const outwardDirection = textMesh.position.clone().multiplyScalar(2);
+        textMesh.lookAt(outwardDirection);
+
+        textMesh.userData = {
+          normalizedDirection: normalizedDirection, // [수정 2] 방향 저장
+          targetPosition: textMesh.position.clone(),
+          isFloating: false,
+          floatSpeed: 0,
+          rotationSpeed: 0
+        };
+
+        scene.add(textMesh);
+        textMeshes.push(textMesh);
+
+        // sun 모드라면 새로 생긴 글자도 바로 우주로 '떠다니는' 상태로 전환
+        if (mode === 'sun') {
+          makeTextFloat(textMesh);
+        }
+
+        return textMesh;
+      }
+
+      // sun 모드: 텍스트를 우주로 밀어내는 애니메이션 파라미터 부여
+      function makeTextFloat(textMesh) {
+        textMesh.material.emissive.setHex(0xffffff);
+        textMesh.material.emissiveIntensity = 1.5;
+
+        const floatDirection = textMesh.position.clone().normalize();
+        const floatDistance = 3 + Math.random() * 2;
+        textMesh.userData.targetPosition = floatDirection.multiplyScalar(floatDistance);
+        textMesh.userData.isFloating = true;
+        textMesh.userData.floatSpeed = 0.015 + Math.random() * 0.015;
+        textMesh.userData.rotationSpeed = (Math.random() - 0.5) * 0.03;
+      }
+
+      // ====== 색상 맵 ======
+      const colorMap = {
+        'red': 0xff0000,
+        'blue': 0x0000ff,
+        'green': 0x00ff00,
+        'yellow': 0xffff00,
+        'purple': 0x800080,
+        'pink': 0xffc0cb,
+        'orange': 0xffa500,
+        'cyan': 0x00ffff,
+        'magenta': 0xff00ff,
+        'white': 0xffffff,
+        'grey': 0x808080,
+        'gray': 0x808080,
+        'brown': 0x8b4513,
+        'lime': 0x00ff00,
+        'navy': 0x000080,
+        'teal': 0x008080,
+        'violet': 0xee82ee,
+        'gold': 0xffd700,
+        'silver': 0xc0c0c0
+      };
+      
+      function setCustomSphereColor(colorName) {
+        const colorHex = colorMap[colorName.toLowerCase()];
+        if (colorHex === undefined) return false;
+        
+        customColorMode = true;
+        customColorMaterial = new THREE.MeshStandardMaterial({
+          color: colorHex,
+          roughness: 0.6,
+          metalness: 0.4,
+          emissive: colorHex,
+          emissiveIntensity: 0.3
+        });
+        
+        sphere.material = customColorMaterial;
+        
+        // 모션 블러 구체들도 색상 변경
+        motionBlurSpheres.forEach((blurSphere, i) => {
+          blurSphere.material.color.setHex(colorHex);
+          blurSphere.material.emissive.setHex(colorHex);
+          blurSphere.material.emissiveIntensity = 0.2 - i * 0.05;
+        });
+        
+        return true;
+      }
+
+      // ====== 모드 전환 ======
+
+      function resetToNormal() {
+        mode = 'space';
+        document.body.classList.remove('dark');
+        document.body.classList.remove('sun-glow');
+
+        renderer.domElement.style.opacity = '1';
+
+        // bed stuff off
+        bedWrapper.style.display = 'none';
+        monolith.style.display = 'none';
+        // [수정 3] 모노리스 리셋
+        monolithSize = 0;
+        monolith.style.width = '0px';
+        monolith.style.height = '0px';
+
+        // blackout/terminal reset
+        blackoutTriggered = false;
+        blackoutEl.classList.remove('active');
+        terminalEl.classList.remove('active');
+        terminalExitHint.classList.remove('active');
+        terminalContentEl.innerHTML = "";
+        conversationHistory = [];
+        questionIndex = 0;
+        postAsciiQuestionCount = 0;
+        awaitingAnswer = false;
+        userBuffer = "";
+        pendingChars = [];
+        if (typingTicker) {
+          clearInterval(typingTicker);
+          typingTicker = null;
+        }
+        // [수정 4] 오디오 정지
+        if (terminalAudio) {
+          terminalAudio.pause();
+          terminalAudio.currentTime = 0;
+        }
+        
+        // center-content reset
+        centerContentEl.classList.remove('active');
+        centerContentEl.innerHTML = "";
+        backHint.classList.remove('active');
+        
+        // Star 오디오 정지
+        if (starAudio) {
+          starAudio.pause();
+          starAudio.currentTime = 0;
+          starAudio = null;
+        }
+
+        // sphere back to black core (크기 유지, scale은 그대로 두고 머티리얼만 복귀)
+        sphere.material = sphereBlackMaterial;
+        customColorMode = false;
+        customColorMaterial = null;
+        
+        // 모션 블러 구체들도 리셋
+        motionBlurSpheres.forEach(blurSphere => {
+          blurSphere.material.color.setHex(0x000000);
+          blurSphere.scale.copy(sphere.scale);
+        });
+
+        // 별 초기화
+        tinyStars.material.size = tinyStars.userData.baseSize;
+        midStars.material.size  = midStars.userData.baseSize;
+        bigStars.material.size  = bigStars.userData.baseSize;
+        innerTinyStars.material.size = innerTinyStars.userData.baseSize;
+        innerMidStars.material.size  = innerMidStars.userData.baseSize;
+        innerBigStars.material.size  = innerBigStars.userData.baseSize;
+        tinyStars.material.opacity = 1.0;
+        midStars.material.opacity  = 1.0;
+        bigStars.material.opacity  = 1.0;
+        innerTinyStars.material.opacity = 0.6;
+        innerMidStars.material.opacity  = 0.6;
+        innerBigStars.material.opacity  = 0.6;
+        
+        // depthTest 복원
+        innerTinyStars.material.depthTest = false;
+        innerMidStars.material.depthTest = false;
+        innerBigStars.material.depthTest = false;
+
+        // 구 위 텍스트들 제거
+        textMeshes.forEach(mesh => {
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+        });
+        textMeshes = [];
+        currentTextMesh = null;
+
+        currentInput = "";
+        typingIndicator.textContent = "";
+      }
+
+      function enterSunMode() {
+        mode = 'sun';
+        document.body.classList.add('dark');
+        document.body.classList.add('sun-glow');
+
+        renderer.domElement.style.opacity = '1';
+
+        // bed, terminal, blackout 끄기
+        bedWrapper.style.display = 'none';
+        monolith.style.display = 'none';
+        blackoutEl.classList.remove('active');
+        terminalEl.classList.remove('active');
+
+        // 구체를 노란 태양으로 (scale 유지)
+        sphere.material = sphereSunMaterial;
+
+        // 별 강조
+        [tinyStars, midStars, bigStars].forEach(points => {
+          points.material.size = points.userData.baseSize * 1.2;
+          points.material.opacity = 1.0;
+        });
+        
+        // 내부 별들도 강조 (투명도는 0.7 정도로)
+        [innerTinyStars, innerMidStars, innerBigStars].forEach(points => {
+          points.material.size = points.userData.baseSize * 1.2;
+          points.material.opacity = 0.7;
+        });
+
+        // 이미 있는 텍스트도 float 부여
+        textMeshes.forEach(mesh => {
+          makeTextFloat(mesh);
+        });
+      }
+
+      function enterBedMode() {
+        mode = 'bed';
+        document.body.classList.remove('sun-glow');
+        document.body.classList.remove('dark');
+
+        // 3D 안 보이게
+        renderer.domElement.style.opacity = '0';
+
+        // 침대 크게 보여주기
+        bedWrapper.style.display = 'block';
+
+        // monolith on
+        monolith.style.display = 'block';
+        // [수정 3] 모노리스 리셋
+        monolithSize = 0;
+        monolith.style.width = '0px';
+        monolith.style.height = '0px';
+
+        // blackout/terminal off
+        blackoutTriggered = false;
+        blackoutEl.classList.remove('active');
+        terminalEl.classList.remove('active');
+      }
+
+      // monolith가 침대 높이를 넘으면 블랙아웃 전환
+      function checkMonolithOverflow(currentHeightPx) {
+        // [수정 3] 침대 높이 대신 뷰포트 높이의 80% 기준으로 변경
+        // (모노리스와 침대가 둘 다 viewport 중앙 기준이므로)
+        const thresholdH = window.innerHeight * 0.8;
+        if (currentHeightPx >= thresholdH && !blackoutTriggered) {
+          triggerBlackout();
+        }
+      }
+
+      function triggerBlackout() {
+        if (blackoutTriggered) return;
+        blackoutTriggered = true;
+
+        blackoutEl.classList.add('active');
+
+        blackoutEl.addEventListener('transitionend', () => {
+          startTerminalMode();
+        }, { once: true });
+      }
+
+      // ====== 해커 단말 모드 ======
+      function startTerminalMode() {
+        mode = 'terminal';
+        document.body.classList.add('dark');
+        document.body.classList.remove('sun-glow');
+
+        bedWrapper.style.display = 'none';
+        monolith.style.display = 'none';
+        renderer.domElement.style.opacity = '0';
+
+        terminalEl.classList.add('active');
+        terminalExitHint.classList.add('active');
+        terminalContentEl.innerHTML = "";
+
+        conversationHistory = [];
+        questionIndex = 0;
+        postAsciiQuestionCount = 0;
+        awaitingAnswer = false;
+        userBuffer = "";
+        pendingChars = [];
+        if (typingTicker) {
+          clearInterval(typingTicker);
+          typingTicker = null;
+        }
+
+        // [수정 4] 오디오 재생 로직 추가
+        if (!terminalAudio) {
+          terminalAudio = new Audio('./public/goldeneye.mp3');
+          terminalAudio.volume = 1.0;
+          
+          // 오디오 메타데이터 로드 시 페이드 아웃 설정
+          terminalAudio.addEventListener('loadedmetadata', () => {
+            const duration = terminalAudio.duration;
+            const fadeStartTime = duration - 3; // 종료 3초 전부터 페이드 아웃
+            
+            terminalAudio.addEventListener('timeupdate', () => {
+              if (terminalAudio.currentTime >= fadeStartTime) {
+                const timeLeft = duration - terminalAudio.currentTime;
+                terminalAudio.volume = Math.max(0, timeLeft / 3); // 3초 동안 페이드 아웃
+              }
+            });
+          });
+        }
+        terminalAudio.currentTime = 0;
+        terminalAudio.volume = 1.0;
+        terminalAudio.play().catch(e => console.warn("Audio play failed:", e));
+
+        // 오디오 재생과 동시에 질문 시작
+        askNextQuestion();
+      }
+
+      function scrollTerminalToBottom() {
+        terminalEl.scrollTop = terminalEl.scrollHeight;
+      }
+
+      function addLine(initialText = "") {
+        const lineEl = document.createElement('div');
+        lineEl.className = 'term-line';
+        lineEl.textContent = initialText;
+        terminalContentEl.appendChild(lineEl);
+        scrollTerminalToBottom();
+        return lineEl;
+      }
+
+      // 시스템 질문을 한 글자씩 찍는 효과
+      function typeSystemLine(text, done) {
+        const lineEl = addLine("");
+        let i = 0;
+        const iv = setInterval(() => {
+          lineEl.textContent += text.charAt(i);
+          i++;
+          scrollTerminalToBottom();
+          if (i >= text.length) {
+            clearInterval(iv);
+            setTimeout(() => {
+              done();
+            }, 150);
+          }
+        }, 40);
+      }
+
+      function updateAnswerDisplay() {
+        if (!currentAnswerEl) return;
+        currentAnswerEl.innerHTML = "";
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = answerPrefix + userBuffer;
+        currentAnswerEl.appendChild(textSpan);
+
+        const cursorSpan = document.createElement('span');
+        cursorSpan.className = 'cursor';
+        currentAnswerEl.appendChild(cursorSpan);
+
+        scrollTerminalToBottom();
+      }
+
+      function startAnswerCapture() {
+        awaitingAnswer = true;
+        userBuffer = "";
+        pendingChars = [];
+        if (typingTicker) {
+          clearInterval(typingTicker);
+          typingTicker = null;
+        }
+        currentAnswerEl = addLine("");
+        updateAnswerDisplay();
+      }
+
+      async function askNextQuestion() {
+        // 5개 질문을 모두 마쳤으면 아스키 아트 생성
+        if (questionIndex >= 5) {
+          await generateAsciiArt();
+          return;
+        }
+
+        let questionText = "";
+        
+        // 처음 3개는 고정 질문
+        if (questionIndex < fixedQuestions.length) {
+          questionText = fixedQuestions[questionIndex];
+        } else {
+          // 4-5번째 질문은 AI 생성
+          try {
+            conversationHistory.push({
+              role: "system",
+              content: "You are a mysterious entity asking simple, easy-to-answer questions about the toy or memories the user mentioned. Ask one short, straightforward question based on the conversation so far. Keep it simple and brief, starting with '...' Keep the question in English. Make it easy for the user to answer with just a few words. Examples: '...what color was it?', '...where did you keep it?', '...who gave it to you?'"
+            });
+            
+            // AI 응답 대기 중 '...' 애니메이션
+            const waitingLineEl = addLine("");
+            let dotCount = 0;
+            const dotInterval = setInterval(() => {
+              dotCount = (dotCount + 1) % 4;
+              waitingLineEl.textContent = '.'.repeat(dotCount);
+            }, 500);
+            
+            const response = await fetch(API_ENDPOINT, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                messages: conversationHistory,
+                max_completion_tokens: 100,
+                model: "gpt-4o-mini"
+              })
+            });
+            
+            const data = await response.json();
+            questionText = data.choices[0].message.content.trim();
+            
+            // AI 응답을 대화 기록에 추가
+            conversationHistory.push({
+              role: "assistant",
+              content: questionText
+            });
+            
+            // 대기 애니메이션 제거
+            clearInterval(dotInterval);
+            waitingLineEl.remove();
+          } catch (error) {
+            console.error("AI request failed:", error);
+            clearInterval(dotInterval);
+            waitingLineEl.remove();
+            questionText = "...what do you seek?";
           }
         }
-        outputEl.appendChild(el);
-        return el;
+        
+        typeSystemLine(questionText, () => {
+          startAnswerCapture();
+        });
       }
 
-      function playSound(url) {
+      // 아스키 아트 생성 함수
+      async function generateAsciiArt() {
+        awaitingAnswer = false;
+        
+        // 빈 줄 추가
+        addLine("");
+        
+        // AI 응답 대기 중 '...' 애니메이션
+        const waitingLineEl = addLine("");
+        let dotCount = 0;
+        const dotInterval = setInterval(() => {
+          dotCount = (dotCount + 1) % 4;
+          waitingLineEl.textContent = '.'.repeat(dotCount);
+        }, 500);
+        
         try {
-          const audio = new Audio(url);
-          audio.play().catch(() => {});
-        } catch (_) {}
+          conversationHistory.push({
+            role: "system",
+            content: "Based on the entire conversation, especially about the toy the user mentioned, create a HIGHLY ACCURATE and detailed ASCII art that PRECISELY represents the specific object. CRITICAL REQUIREMENTS:\n\n1. ACCURACY FIRST: Study the object's EXACT shape, proportions, and distinctive features. Make it instantly recognizable.\n2. SIZE: 30-40 lines tall, 70-90 characters wide for maximum detail\n3. CHARACTER VARIETY: Use rich variety - spaces, dots (.:·∙), lines (-=_~¯‾), curves (()[]{}<>), slashes (/\\|║╱╲), corners (┌┐└┘╭╮╰╯├┤┬┴┼), blocks (█▓▒░■□▪▫), special (#@&$%*+×!), circles (Oo0○●◯◉)\n4. SHADING GRADIENT (critical for realism):\n   - Brightest: '  ' (spaces)\n   - Very light: '·.∙:,'\n   - Light: '-~=_'\n   - Medium-light: '+*xo'\n   - Medium: '#@&%'\n   - Dark: '▒▓█'\n   - Use smooth gradients between light and shadow\n5. STRUCTURE:\n   - Use clear, strong outlines with |/\\-_\n   - Add depth with proper perspective\n   - Include ALL distinctive features (buttons, wheels, eyes, limbs, etc.)\n   - Pay attention to proportions - get them RIGHT\n6. SPECIFIC DETAILS:\n   - If it's a car: show wheels, windows, body shape accurately\n   - If it's an animal: show eyes, ears, limbs, tail correctly\n   - If it's a doll: show face, hair, clothing details\n   - If it's a robot: show joints, panels, antenna\n7. SYMMETRY: Maintain proper symmetry where object is symmetrical\n8. BACKGROUND: Use minimal background, focus on the object\n9. OUTPUT: ONLY the ASCII art, NO text, NO explanations, NO quotes\n10. VERIFY: Before finalizing, check if someone could identify the specific object type from your art\n\nAnalyze the conversation carefully, identify the EXACT toy type, and create photorealistic ASCII art that captures its essence perfectly:"
+          });
+          
+          const response = await fetch(API_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              messages: conversationHistory,
+              max_completion_tokens: 3000,
+              model: "gpt-4o-mini"
+            })
+          });
+          
+          const data = await response.json();
+          const asciiArt = data.choices[0].message.content.trim();
+          
+          // 대기 애니메이션 제거
+          clearInterval(dotInterval);
+          waitingLineEl.remove();
+          
+          // 아스키 아트를 한 줄씩 타이핑
+          const lines = asciiArt.split('\n');
+          let lineIndex = 0;
+          
+          function typeNextLine() {
+            if (lineIndex >= lines.length) {
+              // 아스키 아트 완료 후 추가 대화 시작
+              setTimeout(() => {
+                startPostAsciiConversation();
+              }, 500);
+              return;
+            }
+            
+            const line = lines[lineIndex];
+            const lineEl = addLine("");
+            let charIndex = 0;
+            
+            const charInterval = setInterval(() => {
+              if (charIndex >= line.length) {
+                clearInterval(charInterval);
+                lineIndex++;
+                setTimeout(typeNextLine, 50); // 다음 줄로
+                return;
+              }
+              lineEl.textContent += line.charAt(charIndex);
+              charIndex++;
+              scrollTerminalToBottom();
+            }, 15); // 빠른 타이핑
+          }
+          
+          typeNextLine();
+          
+        } catch (error) {
+          console.error("ASCII art generation failed:", error);
+          clearInterval(dotInterval);
+          waitingLineEl.remove();
+          addLine("...the vision fades...");
+        }
+      }
+      
+      // 아스키 아트 후 추가 대화
+      let postAsciiQuestionCount = 0;
+      async function startPostAsciiConversation() {
+        addLine("");
+        addLine("");
+        
+        // 첫 번째 질문
+        typeSystemLine("...is this what you remember?", () => {
+          startAnswerCapture();
+        });
+      }
+      
+      async function continuePostAsciiConversation() {
+        postAsciiQuestionCount++;
+        
+        if (postAsciiQuestionCount >= 2) {
+          // 2번 대화 후 종료
+          awaitingAnswer = false;
+          addLine("");
+          typeSystemLine("...memories fade, but they never truly disappear", () => {
+            addLine("");
+            addLine("");
+            typeSystemLine("...returning home in 3 seconds...", () => {
+              setTimeout(() => {
+                resetToNormal();
+              }, 3000);
+            });
+          });
+          return;
+        }
+        
+        // AI에게 다음 질문 요청
+        try {
+          conversationHistory.push({
+            role: "system",
+            content: "Based on the user's response about their memory, ask ONE short, reflective follow-up question. Keep it brief, philosophical, and gentle. Start with '...' Examples: '...and does it still bring you comfort?', '...do you wish you could return to that time?', '...what feeling does it evoke now?'"
+          });
+          
+          const waitingLineEl = addLine("");
+          let dotCount = 0;
+          const dotInterval = setInterval(() => {
+            dotCount = (dotCount + 1) % 4;
+            waitingLineEl.textContent = '.'.repeat(dotCount);
+          }, 500);
+          
+          const response = await fetch(API_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              messages: conversationHistory,
+              max_completion_tokens: 80,
+              model: "gpt-4o-mini"
+            })
+          });
+          
+          const data = await response.json();
+          const questionText = data.choices[0].message.content.trim();
+          
+          conversationHistory.push({
+            role: "assistant",
+            content: questionText
+          });
+          
+          clearInterval(dotInterval);
+          waitingLineEl.remove();
+          
+          typeSystemLine(questionText, () => {
+            startAnswerCapture();
+          });
+          
+        } catch (error) {
+          console.error("Post-ASCII conversation failed:", error);
+          clearInterval(dotInterval);
+          awaitingAnswer = false;
+          addLine("...the connection fades...");
+        }
       }
 
-      document.addEventListener("keydown", function (event) {
+      function queueChar(ch) {
+        pendingChars.push(ch);
+        if (!typingTicker) {
+          typingTicker = setInterval(() => {
+            if (pendingChars.length === 0) {
+              clearInterval(typingTicker);
+              typingTicker = null;
+              return;
+            }
+            const nextChar = pendingChars.shift();
+            userBuffer += nextChar;
+            updateAnswerDisplay();
+          }, 30);
+        }
+      }
 
-        if (event.key === "Enter") {
-          event.preventDefault();
-          const text = currentInput.trim();
-          if (text) {
-            const div = document.createElement("div");
-            div.className = "word";
-            div.textContent = text;
-            presetEl.appendChild(div);
-            currentInput = "";
-            outputEl.innerHTML = ""; // after enter
+      function handleTerminalBackspace() {
+        if (pendingChars.length > 0) {
+          pendingChars.pop();
+          return;
+        }
+        if (userBuffer.length > 0) {
+          userBuffer = userBuffer.slice(0, -1);
+          updateAnswerDisplay();
+        }
+      }
 
-            // word based action
-            const normalized = text.toLowerCase();
-            const centerEl = document.getElementById("center");
-            if (normalized === "moon") {
-              centerEl.innerHTML = "";
-              const iframe = document.createElement("iframe");
-              iframe.setAttribute("width", "560");
-              iframe.setAttribute("height", "315");
-              iframe.setAttribute("src", "https://www.youtube.com/embed/fhYpzlqw7lY?si=yvEVYZgbojvFcJJP&autoplay=1&start=33&controls=0&modestbranding=1&rel=0&playsinline=1");
-              iframe.setAttribute("title", "YouTube video player");
-              iframe.setAttribute("frameborder", "0");
-              iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
-              iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-              iframe.setAttribute("allowfullscreen", "");
-              centerEl.appendChild(iframe);
-              centerEl.classList.add("active");
-            } else if (normalized === "star") {
-              centerEl.innerHTML = "";
-              const img = document.createElement("img");
-              img.setAttribute("src", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHo5dTI0cHM0ZG1tM3N5ZWR6bHM2MTYwYm1pNWt6dDgzd25yajgybyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hXTsVGndgr1oMC2F9t/giphy.gif");
-              img.setAttribute("alt", "sleep gif");
-              centerEl.appendChild(img);
-              centerEl.classList.add("active");
-            } else if (normalized === "sun") {
-              playSound("https://actions.google.com/sounds/v1/human_voices/male_chuckling.ogg?hl=ko");
+      function finalizeAnswerAndNextQuestion() {
+        // pendingChars 남은 거 마저 반영
+        while (pendingChars.length > 0) {
+          const nextChar = pendingChars.shift();
+          userBuffer += nextChar;
+        }
+        if (typingTicker) {
+          clearInterval(typingTicker);
+          typingTicker = null;
+        }
+
+        // 커서를 제거하고 최종 답변만 표시
+        if (currentAnswerEl) {
+          currentAnswerEl.textContent = answerPrefix + userBuffer;
+        }
+
+        // 사용자 답변을 대화 기록에 추가
+        if (userBuffer.trim()) {
+          conversationHistory.push({
+            role: "user",
+            content: userBuffer
+          });
+        }
+
+        awaitingAnswer = false;
+        userBuffer = ""; // 버퍼 초기화
+        
+        // 아스키 아트 이후 대화인지 확인
+        if (questionIndex >= 5) {
+          // 아스키 아트 후 추가 대화
+          continuePostAsciiConversation();
+        } else {
+          // 일반 질문 진행
+          questionIndex++; // 다음 질문으로
+          askNextQuestion();
+        }
+      }
+
+      // ====== 키보드 입력 ======
+      document.addEventListener('keydown', (event) => {
+        if (mode === 'terminal') {
+          // 터미널 모드 대화
+          if (awaitingAnswer) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              // "back to home" 입력시 홈으로 복귀
+              if (userBuffer.trim().toLowerCase() === 'back to home') {
+                resetToNormal();
+                return;
+              }
+              finalizeAnswerAndNextQuestion();
+              return;
+            }
+            if (event.key === 'Backspace') {
+              event.preventDefault();
+              handleTerminalBackspace();
+              return;
+            }
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              queueChar(event.key);
+              return;
+            }
+          } else {
+            // 질문 다 끝난 후의 입력 (back to home만 허용)
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              // "back to home" 입력시 홈으로 복귀
+              if (userBuffer.trim().toLowerCase() === 'back to home') {
+                resetToNormal();
+                return;
+              }
+            } else if (event.key === 'Backspace') {
+              event.preventDefault();
+              if (userBuffer.length > 0) {
+                userBuffer = userBuffer.slice(0, -1);
+              }
+            } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              userBuffer += event.key;
             }
           }
-        } else if (event.key === "Backspace") {
+          return;
+        }
+
+        // ===== space / sun / bed 모드 =====
+
+        if (event.key === 'Enter') {
           event.preventDefault();
-          if (currentInput.length) {
+          
+          // center-content가 활성화된 상태에서 엔터 치면 닫기
+          if (centerContentEl.classList.contains('active')) {
+            centerContentEl.classList.remove('active');
+            centerContentEl.innerHTML = "";
+            backHint.classList.remove('active');
+            renderer.domElement.style.opacity = '1';
+            // Star 오디오 정지
+            if (starAudio) {
+              starAudio.pause();
+              starAudio.currentTime = 0;
+              starAudio = null;
+            }
+            return;
+          }
+          
+          const text = currentInput.trim();
+
+          // 아무것도 안 쓰고 Enter 치면 홈(우주)로 완전 복귀
+          if (text === "") {
+            resetToNormal();
+            return;
+          }
+
+          // 단어를 구 표면 근처에 찍기
+          currentTextMesh = createTextOnSphere(text);
+
+          // 특수 명령
+          const lowerText = text.toLowerCase();
+          
+          // 색상 명령 확인 (우선순위가 높음)
+          if (setCustomSphereColor(lowerText)) {
+            // 색상이 성공적으로 변경됨
+          } else if (lowerText === 'sun') {
+            enterSunMode();
+          } else if (lowerText === 'bed') {
+            enterBedMode();
+          } else if (lowerText === 'moon') {
+            // Moon: 유튜브 영상 보여주기
+            renderer.domElement.style.opacity = '0';
+            centerContentEl.innerHTML = "";
+            const iframe = document.createElement("iframe");
+            iframe.setAttribute("width", "560");
+            iframe.setAttribute("height", "315");
+            iframe.setAttribute("src", "https://www.youtube.com/embed/fhYpzlqw7lY?si=yvEVYZgbojvFcJJP&autoplay=1&start=33&controls=0&modestbranding=1&rel=0&playsinline=1");
+            iframe.setAttribute("title", "YouTube video player");
+            iframe.setAttribute("frameborder", "0");
+            iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
+            iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+            iframe.setAttribute("allowfullscreen", "");
+            centerContentEl.appendChild(iframe);
+            centerContentEl.classList.add("active");
+            backHint.classList.add("active");
+          } else if (lowerText === 'star') {
+            // Star: 오디오 재생하고 gif 보여주기
+            renderer.domElement.style.opacity = '0';
+            centerContentEl.innerHTML = "";
+            
+            // 오디오 재생 (변수에 저장)
+            starAudio = new Audio("https://actions.google.com/sounds/v1/human_voices/babies_coo.ogg");
+            starAudio.play().catch(e => console.warn("Audio play failed:", e));
+            
+            const img = document.createElement("img");
+            img.setAttribute("src", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHo5dTI0cHM0ZG1tM3N5ZWR6bHM2MTYwYm1pNWt6dDgzd25yajgybyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hXTsVGndgr1oMC2F9t/giphy.gif");
+            img.setAttribute("alt", "sleep gif");
+            centerContentEl.appendChild(img);
+            centerContentEl.classList.add("active");
+            backHint.classList.add("active");
+          }
+
+          currentInput = "";
+          typingIndicator.textContent = "";
+          return;
+        }
+
+        if (event.key === 'Backspace') {
+          event.preventDefault();
+
+          if (mode === 'bed') {
+            // [수정 3] bed 모드: monolith 수축 (중앙 기준)
+            if (!blackoutTriggered) {
+              monolithSize = Math.max(0, monolithSize - 5);
+              const newW = monolithSize;
+              const newH = monolithSize * 2;
+              monolith.style.width = newW + 'px';
+              monolith.style.height = newH + 'px';
+            }
+            return;
+          }
+
+          // space/sun: 현재 입력 버퍼 수정
+          if (currentInput.length > 0) {
             currentInput = currentInput.slice(0, -1);
-            if (outputEl.lastChild) outputEl.removeChild(outputEl.lastChild);
-          } else if (outputEl.lastChild) {
-            outputEl.removeChild(outputEl.lastChild);
+            typingIndicator.textContent = currentInput;
           }
-        } else if (event.key.length === 1) {
+          return;
+        }
+
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+          event.preventDefault();
+
+          if (mode === 'bed') {
+            // [수정 3] bed 모드: 타이핑할수록 monolith가 커짐 (중앙 기준)
+            if (!blackoutTriggered) {
+              monolithSize += 5; // 기본 크기 증가
+              const newW = monolithSize;
+              const newH = monolithSize * 2; // 1:2 비율
+              monolith.style.width = newW + 'px';
+              monolith.style.height = newH + 'px';
+              checkMonolithOverflow(newH); // 높이 기준으로 체크
+            }
+            return;
+          }
+
+          // space/sun 모드: 그냥 입력 버퍼에 쌓음
           currentInput += event.key;
-          addDomElement("span", { text: event.key });
-          // hide
-          const centerEl = document.getElementById("center");
-          if (centerEl.classList.contains("active")) {
-            centerEl.classList.remove("active");
-            centerEl.innerHTML = "";
-          }
+          typingIndicator.textContent = currentInput;
+          return;
         }
       });
+
+      // ====== 애니메이션 루프 ======
+      function animate() {
+        requestAnimationFrame(animate);
+
+        controls.update();
+
+        const t = clock.getElapsedTime();
+
+        // [수정 1] 부드러운 구체 스케일링 적용
+        if (Math.abs(currentSphereScale - targetSphereScale) > 0.001) {
+          currentSphereScale = THREE.MathUtils.lerp(currentSphereScale, targetSphereScale, 0.1);
+          applySphereScale();
+        }
+        
+        // 모션 블러 효과: 이전 회전 상태를 저장하고 블러 구체에 적용
+        motionBlurSpheres.forEach((blurSphere, i) => {
+          if (i === 0) {
+            // 첫 번째 블러 구체는 이전 프레임의 회전 상태 저장
+            previousSphereRotations[2].copy(previousSphereRotations[1]);
+            previousSphereRotations[1].copy(previousSphereRotations[0]);
+            previousSphereRotations[0].copy(sphere.rotation);
+          }
+          
+          // 각 블러 구체에 이전 회전 상태 적용
+          blurSphere.rotation.copy(previousSphereRotations[i]);
+          blurSphere.scale.copy(sphere.scale);
+        });
+
+        // 별의 회전 / 반짝임
+        starsGroup.rotation.y += 0.0006;
+        starsGroup.rotation.x += 0.00025;
+
+        tinyStars.material.opacity = 0.8 + Math.sin(t * 1.5) * 0.2;
+        midStars.material.opacity  = 0.8 + Math.sin(t * 1.1 + 1.3) * 0.25;
+        bigStars.material.opacity  = 0.9 + Math.sin(t * 0.8 + 2.1) * 0.2;
+        
+        // 구체 내부 별들: 구체 스케일에 따라 크기 조정
+        innerStarsGroup.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
+        innerStarsGroup.rotation.y += 0.0004;
+        innerStarsGroup.rotation.x += 0.0002;
+        
+        // 투명도를 0.6 정도로 유지하되 약간의 깜빡임 효과
+        innerTinyStars.material.opacity = 0.6 + Math.sin(t * 1.3 + 0.5) * 0.1;
+        innerMidStars.material.opacity  = 0.6 + Math.sin(t * 0.9 + 1.8) * 0.1;
+        innerBigStars.material.opacity  = 0.6 + Math.sin(t * 1.0 + 2.5) * 0.1;
+
+        // [수정 2] 텍스트 위치 및 크기 업데이트 로직
+        textMeshes.forEach((textMesh) => {
+          // 모든 텍스트의 크기를 구체 스케일에 맞춰 조정
+          textMesh.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
+          
+          if (textMesh.userData.isFloating) {
+            // Sun 모드: float away
+            textMesh.position.lerp(
+              textMesh.userData.targetPosition,
+              textMesh.userData.floatSpeed
+            );
+            textMesh.rotation.x += textMesh.userData.rotationSpeed;
+            textMesh.rotation.y += textMesh.userData.rotationSpeed * 0.7;
+          } else {
+            // Space 모드: 구체 표면에 붙어있기
+            const newRadius = getCurrentSurfaceRadius();
+            const newPosition = textMesh.userData.normalizedDirection.clone().multiplyScalar(newRadius);
+            textMesh.position.copy(newPosition);
+            // 바깥쪽을 바라보도록 (180도 회전)
+            const outwardDirection = newPosition.clone().multiplyScalar(2);
+            textMesh.lookAt(outwardDirection);
+            
+            // 'sun' 모드 전환 시를 대비해 targetPosition도 업데이트
+            textMesh.userData.targetPosition.copy(newPosition);
+          }
+        });
+
+        renderer.render(scene, camera);
+      }
+
+      // 리사이즈 대응
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      animate();
     </script>
   </body>
 </html>
