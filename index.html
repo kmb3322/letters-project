@@ -65,6 +65,12 @@
         min-height: 20px;
         letter-spacing: 0.5px;
       }
+      /* larger prompt style used in Moon mode for ENTER/TYPE */
+      #typing-indicator.typing-big {
+        font-size: 28pt;
+        letter-spacing: 3px;
+        opacity: 0.85;
+      }
       body.dark #typing-indicator {
         color: #fff;
       }
@@ -93,7 +99,7 @@
         color: #111;
         font-size: 12px;
         line-height: 1.6;
-        pointer-events: none;
+        pointer-events: auto;
       }
       body.dark #preset {
         color: #fff;
@@ -101,6 +107,9 @@
       #preset .word {
         opacity: 0.75;
       }
+      #preset .word { cursor: pointer; }
+      #preset .word.primary { text-decoration: underline; }
+      #preset .word:hover { opacity: 1; }
 
       /* minbeom link */
       .site-link {
@@ -266,16 +275,65 @@
       #back-hint.active {
         display: block;
       }
+
+      /* onboarding hints */
+      .hint {
+        position: fixed;
+        left: 50%;
+        bottom: 70px;
+        transform: translateX(-50%);
+        color: #111;
+        font-family: "Apple Garamond", serif;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        z-index: 20;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+      }
+      body.dark .hint {
+        color: #fff;
+      }
+      .hint.visible {
+        opacity: 1;
+      }
+
+      /* Moon story overlay (right center) */
+      #moon-story {
+        position: fixed;
+        right: 10%;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 960;
+        display: none;
+        max-width: 40vw;
+        color: inherit;
+      }
+      #moon-story.active { display: block; }
+      #moon-line {
+        font-size: 18px;
+        letter-spacing: 0.3px;
+        opacity: 0;
+        transition: opacity 1100ms ease;
+      }
+      #moon-line.visible { opacity: 1; }
+      #moon-prompt {
+        margin-top: 14px;
+        font-size: 28px;
+        opacity: 0.5;
+        letter-spacing: 2px;
+      }
+      #moon-input-value { display: none; }
     </style>
   </head>
   <body>
     <div class="top-title">timetogotobed</div>
 
     <div id="preset" aria-hidden="true">
-      <div class="word">Moon</div>
-      <div class="word">Sun</div>
-      <div class="word">Star</div>
-      <div class="word">Bed</div>
+      <div id="star-trigger" class="word primary">Star</div>
+      <div id="sun-trigger" class="word">Sun</div>
+      <div id="moon-trigger" class="word">Moon</div>
+      <div id="bed-trigger" class="word">Bed</div>
     </div>
 
     <!-- bed mode content -->
@@ -304,9 +362,21 @@
     
     <!-- center content for special words -->
     <div id="center-content"></div>
+
+    <!-- Moon story overlay -->
+    <div id="moon-story">
+      <div id="moon-line"></div>
+      <div id="moon-prompt"></div>
+      <div id="moon-input-value"></div>
+    </div>
     
     <!-- back hint -->
     <div id="back-hint">press enter to back</div>
+
+    <!-- onboarding hints -->
+    <div id="hint-drag" class="hint" aria-hidden="true">Drag To Move Space</div>
+    <div id="hint-scroll" class="hint" aria-hidden="true">Scroll To Change Size</div>
+    <div id="hint-type" class="hint" aria-hidden="true">Type</div>
 
     <a class="site-link" href="https://minbeomkim.com" target="_blank" rel="noopener">MinbeomKim.com</a>
 
@@ -367,6 +437,17 @@
       const terminalExitHint = document.getElementById('terminal-exit-hint');
       const centerContentEl = document.getElementById('center-content');
       const backHint = document.getElementById('back-hint');
+      const hintDrag = document.getElementById('hint-drag');
+      const hintScroll = document.getElementById('hint-scroll');
+      const hintType = document.getElementById('hint-type');
+      const moonStoryEl = document.getElementById('moon-story');
+      const moonLineEl = document.getElementById('moon-line');
+      const moonPromptEl = document.getElementById('moon-prompt');
+      const moonInputValueEl = document.getElementById('moon-input-value');
+      const starTriggerEl = document.getElementById('star-trigger');
+      const sunTriggerEl = document.getElementById('sun-trigger');
+      const moonTriggerEl = document.getElementById('moon-trigger');
+      const bedTriggerEl = document.getElementById('bed-trigger');
 
       // ====== 구체 머티리얼 ======
       const sphereBlackMaterial = new THREE.MeshStandardMaterial({
@@ -389,6 +470,9 @@
       const sphereGeometry = new THREE.SphereGeometry(2, 64, 64);
       const sphere = new THREE.Mesh(sphereGeometry, sphereBlackMaterial);
       scene.add(sphere);
+      // Texts will attach to this anchor so they follow sphere rotation but not scale
+      const textAnchor = new THREE.Group();
+      scene.add(textAnchor);
       
       // 모션 블러 효과를 위한 추가 구체들 (트레일 효과)
       const motionBlurSpheres = [];
@@ -414,8 +498,12 @@
 
       // ---- sphere scale state (scroll로 조절) ----
       // [수정 1] 부드러운 스크롤을 위해 current와 target 분리
-      let currentSphereScale = 1.0;
-      let targetSphereScale = 1.0;
+      let currentSphereScale = 6.0; // 시작은 더 크게 확대된 상태
+      let targetSphereScale = 1.0;  // 천천히 기본 크기로 수렴
+      let introActive = true;        // 도입 중 여부
+      const INTRO_SHRINK_LERP = 0.06; // 도입 축소 속도 (조금 더 빠르게)
+      const NORMAL_SHRINK_LERP = 0.1; // 일반 축소 속도
+      const INTRO_ROT_PER_FRAME = 0.006; // 도입 중 더 강한 반시계 회전
       function applySphereScale() {
         // [수정 1] currentSphereScale 사용
         sphere.scale.set(currentSphereScale, currentSphereScale, currentSphereScale);
@@ -432,6 +520,24 @@
 
       // 마우스 휠로 구체 크기 조절
       window.addEventListener('wheel', (e) => {
+        // 도입 종료 (사용자 인터랙션 발생)
+        introActive = false;
+        // 온보딩: 스크롤 조작 감지 시 Scroll 힌트 제거 후 Drag 힌트 표시
+        if (mode === 'space') {
+          if (hintScroll && hintScroll.classList.contains('visible')) {
+            hideHint(hintScroll);
+            scrollHintDismissed = true; // 다시는 표시하지 않음
+            // 완전히 제거 (페이드아웃 이후)
+            setTimeout(() => { if (scrollHintDismissed && hintScroll) hintScroll.style.display = 'none'; }, 800);
+          } else {
+            scrollHintDismissed = true;
+          }
+          setTimeout(() => {
+            if (mode === 'space' && hintDrag && !dragHintDismissed) {
+              showHint(hintDrag);
+            }
+          }, 250);
+        }
         // scroll up (deltaY < 0) => 구 커짐
         // scroll down (deltaY > 0) => 구 작아짐
         const step = 0.05;
@@ -540,7 +646,7 @@
       scene.add(innerStarsGroup);
 
       // ====== 상태 관리 ======
-      // 모드: 'space' | 'sun' | 'bed' | 'terminal'
+      // 모드: 'space' | 'sun' | 'bed' | 'terminal' | 'moon'
       let mode = 'space';
 
       let currentInput = "";
@@ -554,6 +660,11 @@
       // 커스텀 색상 모드
       let customColorMode = false;
       let customColorMaterial = null;
+
+      // 문장 입력 시 구체를 잠깐 빠르게 회전시키는 스핀 효과
+      let scatterSpinActive = false;
+      let scatterSpinVelY = 0;
+      let scatterSpinVelZ = 0;
 
       // Terminal 상태
       const API_ENDPOINT = "https://cim-back.vercel.app/chat/completions";
@@ -573,19 +684,272 @@
         "...do you miss it?"
       ]; // 고정 질문들
 
+      // ====== Moon mode 상태 ======
+      const moonLines = [
+        "Look at the stars",
+        "Don't look at me",
+        "LOOK",
+        "wish to the stars"
+      ];
+      let moonStep = 0;
+      let moonAwaitingEnter = false;
+      let moonAwaitingType = false;
+      let moonInputBuffer = "";
+      let moonAwaitingSecondEnter = false;
+      let moonEnterPromptTimer = null;
+      let moonLoadingInterval = null;
+      let moonHistory = [];
+      let moonConvTurns = 0;
+      let moonAwaitingFinalDecision = false;
+      let moonHasWished = false;
+      let moonConversationActive = false;
+      let moonTypePromptTimer = null;
+      
+      // ====== 공용 AI 호출 (재시도/타임아웃) ======
+      async function callAIWithRetries(messages, maxTokens, attemptTimeoutsMs = [14000, 20000, 28000, 36000]) {
+        for (let i = 0; i < attemptTimeoutsMs.length; i++) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), attemptTimeoutsMs[i]);
+          try {
+            const response = await fetch(API_ENDPOINT, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messages,
+                max_completion_tokens: maxTokens,
+                model: "gpt-5-mini"
+              }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            const content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
+            if (content && content.trim()) return content.trim();
+          } catch (e) {
+            clearTimeout(timeoutId);
+            console.warn('AI request attempt failed', i + 1, e);
+            const backoff = Math.min(2000 * Math.pow(2, i), 8000);
+            await new Promise(r => setTimeout(r, backoff));
+          }
+        }
+        return null;
+      }
+
+      function clearMoonEnterPrompt() {
+        if (moonEnterPromptTimer) {
+          clearTimeout(moonEnterPromptTimer);
+          moonEnterPromptTimer = null;
+        }
+      }
+      function scheduleMoonEnterPrompt() {
+        clearMoonEnterPrompt();
+        moonEnterPromptTimer = setTimeout(() => setMoonPrompt('ENTER'), 3000);
+      }
+      function clearMoonTypePrompt() {
+        if (moonTypePromptTimer) {
+          clearTimeout(moonTypePromptTimer);
+          moonTypePromptTimer = null;
+        }
+      }
+      function scheduleMoonTypePrompt() {
+        clearMoonTypePrompt();
+        moonTypePromptTimer = setTimeout(() => {
+          if (moonAwaitingType && (!moonInputBuffer || !moonInputBuffer.trim())) {
+            setMoonPrompt('TYPE');
+          }
+        }, 5000);
+      }
+      function resetMoonInputBuffer(showType = false) {
+        moonInputBuffer = "";
+        if (showType) {
+          setMoonPrompt('TYPE');
+        } else {
+          setMoonPrompt("");
+        }
+      }
+      function startMoonLoading() {
+        if (moonLoadingInterval) return;
+        let dots = 0;
+        moonLineEl.classList.remove('visible');
+        setTimeout(() => {
+          moonLineEl.textContent = '';
+          moonLineEl.classList.add('visible');
+        }, 120);
+        moonLoadingInterval = setInterval(() => {
+          dots = (dots + 1) % 4;
+          moonLineEl.textContent = '.'.repeat(dots);
+        }, 350);
+      }
+      function stopMoonLoading() {
+        if (moonLoadingInterval) {
+          clearInterval(moonLoadingInterval);
+          moonLoadingInterval = null;
+        }
+      }
+
+      function setMoonPrompt(text) {
+        // Show prompts in the central typing indicator, not with underline
+        typingIndicator.textContent = text || "";
+        if (text) typingIndicator.classList.add('typing-big');
+        else typingIndicator.classList.remove('typing-big');
+        // Keep overlay prompt empty
+        moonPromptEl.textContent = "";
+      }
+
+      function showMoonText(text) {
+        // Fade out current text
+        moonLineEl.classList.remove('visible');
+        setTimeout(() => {
+          moonLineEl.textContent = text || "";
+          // Fade in next text
+          requestAnimationFrame(() => {
+            moonLineEl.classList.add('visible');
+          });
+        }, 700);
+      }
+
+      function startMoonSequence() {
+        moonStep = 0;
+        moonAwaitingType = false;
+        moonAwaitingEnter = true;
+        moonInputBuffer = "";
+        moonInputValueEl.textContent = "";
+        showMoonText(moonLines[moonStep]);
+        setMoonPrompt('');
+        scheduleMoonEnterPrompt();
+      }
+
+      async function moonGetShortReply(history) {
+        return await callAIWithRetries(history, 60, [14000, 20000, 28000, 36000]);
+      }
+
+      async function handleMoonWish(wishText) {
+        // 첫 응답
+        const baseSystem = {
+          role: 'system',
+          content: "You are the stars hearing the user's wish. Reply in one short, concrete yet poetic phrase (≤6 words) that clearly references the main subject of the wish. Avoid ellipses. Avoid filler. No quotes."
+        };
+        const messages = [baseSystem, { role: 'user', content: wishText }];
+        // 사용자가 친 문장을 구체 위에 단어별로 배치
+        const wordsPlaced = wishText.split(/\s+/).filter(Boolean);
+        const placeAngleStep = 0.08;
+        const placeDownStep = 0.05;
+        wordsPlaced.forEach((w, i) => createTextOnSphere(w, i, placeAngleStep, placeDownStep));
+        moonHistory = [{ role: 'system', content: baseSystem.content }, { role: 'user', content: wishText }];
+        startMoonLoading();
+        // 성공할 때까지 추가 시도 (내부 재시도 포함하여 최대 몇 차례 더)
+        let reply1 = await moonGetShortReply(messages);
+        let extraTries1 = 2;
+        while (!reply1 && extraTries1 > 0) {
+          reply1 = await moonGetShortReply(messages);
+          extraTries1--;
+        }
+        if (reply1) {
+          stopMoonLoading();
+          showMoonText(reply1);
+          moonHistory.push({ role: 'assistant', content: reply1 });
+          resetMoonInputBuffer(false);
+          moonAwaitingSecondEnter = true;
+          scheduleMoonEnterPrompt();
+        } // 실패 시 로딩 유지 (하드코딩 문구 없음)
+      }
+
+      async function handleMoonSecondReply(wishText) {
+        const baseSystem2 = {
+          role: 'system',
+          content: "You are the stars. Give a different, even shorter, concrete phrase (≤4 words) that still clearly connects to the user's wish. No ellipses, no quotes."
+        };
+        const messages2 = [baseSystem2, { role: 'user', content: wishText }];
+        startMoonLoading();
+        let reply2 = await moonGetShortReply(messages2);
+        let extraTries2 = 2;
+        while (!reply2 && extraTries2 > 0) {
+          reply2 = await moonGetShortReply(messages2);
+          extraTries2--;
+        }
+        if (reply2) {
+          stopMoonLoading();
+          showMoonText(reply2);
+          moonHistory.push({ role: 'assistant', content: reply2 });
+        }
+        // 짧은 지연 후 본 대화 시작 (사용자 입력 3회)
+        setTimeout(() => {
+          clearMoonEnterPrompt();
+          moonConvTurns = 0;
+          moonConversationActive = true;
+          moonAwaitingType = true;
+          resetMoonInputBuffer(true);
+          scheduleMoonTypePrompt();
+        }, 500);
+      }
+
+      async function moonGetConversationalReply(history) {
+        return await callAIWithRetries(history, 120, [15000, 22000, 30000, 36000]);
+      }
+
+      function askMoonFinalQuestion() {
+        showMoonText("...you want to see the light?");
+        moonAwaitingFinalDecision = true;
+        moonAwaitingType = true;
+        resetMoonInputBuffer(true);
+        scheduleMoonTypePrompt();
+      }
+
+      function isPositiveResponse(text) {
+        const t = (text || '').toLowerCase();
+        const positives = [ 'yes', 'y', 'ok', 'okay', 'sure', 'do', 'want', 'please', '네', '응', '좋아', '그래', '응응' ];
+        const negatives = [ 'no', 'n', "don't", 'not', "nope", '아니', '싫어', '아니요' ];
+        if (negatives.some(w => t.includes(w))) return false;
+        if (positives.some(w => t.includes(w))) return true;
+        // 기본은 부정 아님 => 긍정으로 간주해도 됨 (연출상)
+        return true;
+      }
+
+      function enterMoonMode() {
+        mode = 'moon';
+        // Keep background and sphere as-is (no dark/sun-glow switch)
+
+        // Hide unrelated overlays
+        bedWrapper.style.display = 'none';
+        monolith.style.display = 'none';
+        blackoutEl.classList.remove('active');
+        terminalEl.classList.remove('active');
+        centerContentEl.classList.remove('active');
+        centerContentEl.innerHTML = "";
+        backHint.classList.remove('active');
+        renderer.domElement.style.opacity = '1';
+
+        // Moon UI
+        moonStoryEl.classList.add('active');
+        startMoonSequence();
+      }
+
       // ====== 폰트 로드 (구 위 텍스트용) ======
       const fontLoader = new FontLoader();
+      // 먼저 나눔명조(typeface.json)를 시도하고, 실패 시 기존 Droid Serif로 폴백
+      const nanumTypefaceUrl = './fonts/NanumMyeongjo_Regular.typeface.json';
       fontLoader.load(
-        'https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json',
+        nanumTypefaceUrl,
         (loadedFont) => {
           font = loadedFont;
+        },
+        undefined,
+        () => {
+          // 폴백: 기존 드로이드 세리프
+          fontLoader.load(
+            'https://threejs.org/examples/fonts/droid/droid_serif_regular.typeface.json',
+            (fallbackFont) => {
+              font = fallbackFont;
+            }
+          );
         }
       );
 
       // 구 표면 근처에 단어를 "찍는" 함수
       // 중요: 텍스트 geometry의 size는 항상 고정(0.15)
       //       sphereScale과 상관없이 일정한 실제 크기로 생성됨
-      function createTextOnSphere(text) {
+      function createTextOnSphere(text, offsetIndex = 0, offsetAngleStep = 0, offsetDownStep = 0) {
         if (!font) return;
 
         const textGeometry = new TextGeometry(text, {
@@ -614,22 +978,37 @@
 
         // [수정 2] 정규화된 방향 벡터 저장
         const normalizedDirection = cameraDirection.clone().normalize();
+        // 동일 입력(한 문장)의 각 단어가 약간씩 오른쪽으로 치우치도록 위치 각도 보정
+        let placeDirection = normalizedDirection.clone();
+        if (offsetAngleStep && offsetIndex > 0) {
+          placeDirection.applyAxisAngle(camera.up, offsetIndex * offsetAngleStep);
+        }
+        if (offsetDownStep && offsetIndex > 0) {
+          // 카메라의 오른쪽 축을 기준으로 아래쪽으로 살짝 기울이기 (우하향)
+          const camForward = cameraDirection.clone().normalize();
+          const camRight = new THREE.Vector3().crossVectors(camForward, camera.up).normalize();
+          placeDirection.applyAxisAngle(camRight, -offsetDownStep * offsetIndex);
+        }
+        // 앵커의 회전을 따르도록 로컬 방향으로 저장
+        const invAnchorQ = textAnchor.getWorldQuaternion(new THREE.Quaternion()).invert();
+        const localDirection = placeDirection.clone().applyQuaternion(invAnchorQ).normalize();
         
-        textMesh.position.copy(cameraDirection.multiplyScalar(radius));
+        textMesh.position.copy(localDirection.clone().multiplyScalar(radius));
         
-        // 구의 중심에서 바깥쪽을 바라보도록 (180도 회전)
-        const outwardDirection = textMesh.position.clone().multiplyScalar(2);
-        textMesh.lookAt(outwardDirection);
+        // 바깥쪽을 바라보도록 (월드 좌표 기준)
+        const outwardWorld = textAnchor.localToWorld(localDirection.clone().multiplyScalar(radius * 2));
+        textMesh.lookAt(outwardWorld);
 
         textMesh.userData = {
-          normalizedDirection: normalizedDirection, // [수정 2] 방향 저장
+          normalizedDirection: placeDirection.clone(), // world ref (legacy)
+          localDirection: localDirection.clone(), // anchor-local direction
           targetPosition: textMesh.position.clone(),
           isFloating: false,
           floatSpeed: 0,
           rotationSpeed: 0
         };
-
-        scene.add(textMesh);
+        
+        textAnchor.add(textMesh);
         textMeshes.push(textMesh);
 
         // sun 모드라면 새로 생긴 글자도 바로 우주로 '떠다니는' 상태로 전환
@@ -645,12 +1024,51 @@
         textMesh.material.emissive.setHex(0xffffff);
         textMesh.material.emissiveIntensity = 1.5;
 
+        // 앵커에서 분리하여 월드 기준으로 떠다니도록 처리
+        // 현재 월드 위치/회전 보존
+        const worldPos = new THREE.Vector3();
+        textMesh.getWorldPosition(worldPos);
+        const worldQuat = new THREE.Quaternion();
+        textMesh.getWorldQuaternion(worldQuat);
+        if (textMesh.parent) textMesh.parent.remove(textMesh);
+        scene.add(textMesh);
+        textMesh.position.copy(worldPos);
+        textMesh.setRotationFromQuaternion(worldQuat);
+
         const floatDirection = textMesh.position.clone().normalize();
         const floatDistance = 3 + Math.random() * 2;
         textMesh.userData.targetPosition = floatDirection.multiplyScalar(floatDistance);
         textMesh.userData.isFloating = true;
         textMesh.userData.floatSpeed = 0.015 + Math.random() * 0.015;
         textMesh.userData.rotationSpeed = (Math.random() - 0.5) * 0.03;
+      }
+
+      // sun 모드: 텍스트를 구 주위를 도는 위성처럼
+      function makeTextOrbit(textMesh) {
+        textMesh.material.emissive.setHex(0xffffff);
+        textMesh.material.emissiveIntensity = 1.5;
+
+        // 앵커에 부착 보장
+        const worldPos = new THREE.Vector3();
+        textMesh.getWorldPosition(worldPos);
+        const worldQuat = new THREE.Quaternion();
+        textMesh.getWorldQuaternion(worldQuat);
+        if (textMesh.parent !== textAnchor) {
+          if (textMesh.parent) textMesh.parent.remove(textMesh);
+          textAnchor.add(textMesh);
+          // 재배치: 앵커 로컬 방향 업데이트
+          const invAnchorQ = textAnchor.getWorldQuaternion(new THREE.Quaternion()).invert();
+          const dirFromWorld = worldPos.clone().normalize().applyQuaternion(invAnchorQ).normalize();
+          textMesh.userData.localDirection = dirFromWorld;
+        }
+
+        // 오빗 파라미터
+        textMesh.userData.isOrbiting = true;
+        textMesh.userData.isFloating = false;
+        textMesh.userData.orbitAngle = Math.random() * Math.PI * 2;
+        textMesh.userData.orbitSpeed = 0.004 + Math.random() * 0.006; // 조금 더 역동적
+        textMesh.userData.orbitRadiusOffset = 0.5 + Math.random() * 0.7; // 표면에서 살짝 띄움
+        textMesh.userData.selfRotateSpeed = (Math.random() - 0.5) * 0.06;
       }
 
       // ====== 색상 맵 ======
@@ -744,6 +1162,20 @@
         centerContentEl.classList.remove('active');
         centerContentEl.innerHTML = "";
         backHint.classList.remove('active');
+        // Moon reset
+        moonStoryEl.classList.remove('active');
+        moonLineEl.textContent = "";
+        moonLineEl.classList.remove('visible');
+        setMoonPrompt("");
+        moonInputValueEl.textContent = "";
+        clearMoonEnterPrompt();
+        stopMoonLoading();
+        clearMoonTypePrompt();
+        moonHistory = [];
+        moonConvTurns = 0;
+        moonAwaitingFinalDecision = false;
+        moonHasWished = false;
+        moonConversationActive = false;
         
         // Star 오디오 정지
         if (starAudio) {
@@ -784,7 +1216,11 @@
 
         // 구 위 텍스트들 제거
         textMeshes.forEach(mesh => {
-          scene.remove(mesh);
+          if (mesh.parent) {
+            mesh.parent.remove(mesh);
+          } else {
+            scene.remove(mesh);
+          }
           mesh.geometry.dispose();
           mesh.material.dispose();
         });
@@ -793,6 +1229,10 @@
 
         currentInput = "";
         typingIndicator.textContent = "";
+
+        // 온보딩 힌트 정리
+        if (hintDrag) hintDrag.classList.remove('visible');
+        if (hintScroll) hintScroll.classList.remove('visible');
       }
 
       function enterSunMode() {
@@ -823,10 +1263,14 @@
           points.material.opacity = 0.7;
         });
 
-        // 이미 있는 텍스트도 float 부여
+        // 이미 있는 텍스트는 오빗(위성) 모션 부여
         textMeshes.forEach(mesh => {
-          makeTextFloat(mesh);
+          makeTextOrbit(mesh);
         });
+
+        // 온보딩 힌트 숨김
+        if (hintDrag) hintDrag.classList.remove('visible');
+        if (hintScroll) hintScroll.classList.remove('visible');
       }
 
       function enterBedMode() {
@@ -851,6 +1295,10 @@
         blackoutTriggered = false;
         blackoutEl.classList.remove('active');
         terminalEl.classList.remove('active');
+
+        // 온보딩 힌트 숨김
+        if (hintDrag) hintDrag.classList.remove('visible');
+        if (hintScroll) hintScroll.classList.remove('visible');
       }
 
       // monolith가 침대 높이를 넘으면 블랙아웃 전환
@@ -872,6 +1320,22 @@
         blackoutEl.addEventListener('transitionend', () => {
           startTerminalMode();
         }, { once: true });
+      }
+
+      // Moon 간단 연출(오디오+GIF)을 위한 헬퍼
+      function showMoonSimple() {
+        renderer.domElement.style.opacity = '0';
+        centerContentEl.innerHTML = "";
+        // 오디오 재생
+        starAudio = new Audio("https://actions.google.com/sounds/v1/human_voices/babies_coo.ogg");
+        starAudio.play().catch(e => console.warn("Audio play failed:", e));
+        // 이미지 표시
+        const img = document.createElement("img");
+        img.setAttribute("src", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHo5dTI0cHM0ZG1tM3N5ZWR6bHM2MTYwYm1pNWt6dDgzd25yajgybyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hXTsVGndgr1oMC2F9t/giphy.gif");
+        img.setAttribute("alt", "sleep gif");
+        centerContentEl.appendChild(img);
+        centerContentEl.classList.add("active");
+        backHint.classList.add("active");
       }
 
       // ====== 해커 단말 모드 ======
@@ -923,6 +1387,10 @@
 
         // 오디오 재생과 동시에 질문 시작
         askNextQuestion();
+
+        // 온보딩 힌트 숨김
+        if (hintDrag) hintDrag.classList.remove('visible');
+        if (hintScroll) hintScroll.classList.remove('visible');
       }
 
       function scrollTerminalToBottom() {
@@ -1274,6 +1742,155 @@
 
       // ====== 키보드 입력 ======
       document.addEventListener('keydown', (event) => {
+        // 첫 타이핑 시 모든 온보딩 힌트 제거 (영구)
+        if (event.key && event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+          if (!typeHintDismissed) {
+            if (hintType && hintType.classList.contains('visible')) hideHint(hintType);
+            typeHintDismissed = true;
+          }
+          if (!scrollHintDismissed) {
+            if (hintScroll && hintScroll.classList.contains('visible')) hideHint(hintScroll);
+            scrollHintDismissed = true;
+          }
+          if (!dragHintDismissed) {
+            if (hintDrag && hintDrag.classList.contains('visible')) hideHint(hintDrag);
+            dragHintDismissed = true;
+          }
+        }
+        // ===== moon 모드 입력 =====
+        if (mode === 'moon') {
+          // 최종 선택 입력 처리
+          if (moonAwaitingFinalDecision) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              const decision = moonInputBuffer.trim();
+              if (!decision) return;
+              moonAwaitingFinalDecision = false;
+              moonAwaitingType = false;
+              setMoonPrompt("");
+              // 대화 기록에 사용자 응답 추가
+              moonHistory.push({ role: 'user', content: decision });
+              // 분기
+              if (isPositiveResponse(decision)) {
+                enterSunMode();
+              } else {
+                resetToNormal();
+              }
+              return;
+            }
+            if (event.key === 'Backspace') {
+              event.preventDefault();
+              if (moonInputBuffer.length > 0) {
+                moonInputBuffer = moonInputBuffer.slice(0, -1);
+                typingIndicator.textContent = moonInputBuffer || 'TYPE';
+                if (moonInputBuffer) typingIndicator.classList.remove('typing-big');
+                else typingIndicator.classList.add('typing-big');
+              }
+              return;
+            }
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              moonInputBuffer += event.key;
+              typingIndicator.textContent = moonInputBuffer;
+              typingIndicator.classList.remove('typing-big');
+              return;
+            }
+          }
+
+          if (moonAwaitingSecondEnter) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              moonAwaitingSecondEnter = false;
+              clearMoonEnterPrompt();
+              setMoonPrompt("");
+              // 두 번째 답변 출력
+              handleMoonSecondReply(moonInputBuffer);
+            }
+            return;
+          }
+          if (moonAwaitingEnter) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              moonAwaitingEnter = false;
+              clearMoonEnterPrompt();
+              setMoonPrompt("");
+              // 다음 줄로 진행하거나, 입력 단계로
+              moonStep++;
+              if (moonStep < moonLines.length - 1) {
+                // 다음 고정 문장
+                showMoonText(moonLines[moonStep]);
+                // 계속 엔터 대기
+                moonAwaitingEnter = true;
+                setMoonPrompt('');
+                scheduleMoonEnterPrompt();
+              } else {
+                // 입력 단계 진입
+                showMoonText(moonLines[moonStep]);
+                moonAwaitingType = true;
+                resetMoonInputBuffer(true);
+                scheduleMoonTypePrompt();
+              }
+            }
+            return;
+          }
+          if (moonAwaitingType) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              const wish = moonInputBuffer.trim();
+              if (!wish) return; // 빈 입력 무시
+              moonAwaitingType = false;
+              clearMoonTypePrompt();
+              setMoonPrompt("");
+              if (moonHasWished && moonConversationActive) {
+                // 본 대화 중
+                moonHistory.push({ role: 'user', content: wish });
+                startMoonLoading();
+                moonGetConversationalReply(moonHistory).then(reply => {
+                  stopMoonLoading();
+                  showMoonText(reply);
+                  moonHistory.push({ role: 'assistant', content: reply });
+                  moonConvTurns++;
+                  if (moonConvTurns >= 3) {
+                    setTimeout(() => {
+                      askMoonFinalQuestion();
+                    }, 500);
+                  } else {
+                    setTimeout(() => {
+                      moonAwaitingType = true;
+                      resetMoonInputBuffer(true);
+                      scheduleMoonTypePrompt();
+                    }, 400);
+                  }
+                });
+              } else {
+                // 첫 TYPE은 소원 직후 대화 시작용
+                handleMoonWish(wish);
+                moonHasWished = true;
+              }
+              return;
+            }
+            if (event.key === 'Backspace') {
+              event.preventDefault();
+              if (moonInputBuffer.length > 0) {
+                moonInputBuffer = moonInputBuffer.slice(0, -1);
+                typingIndicator.textContent = moonInputBuffer || 'TYPE';
+                if (moonInputBuffer) typingIndicator.classList.remove('typing-big');
+                else typingIndicator.classList.add('typing-big');
+                if (!moonInputBuffer) scheduleMoonTypePrompt(); else clearMoonTypePrompt();
+              }
+              return;
+            }
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              moonInputBuffer += event.key;
+              typingIndicator.textContent = moonInputBuffer;
+              typingIndicator.classList.remove('typing-big');
+              clearMoonTypePrompt();
+              return;
+            }
+          }
+          return;
+        }
         if (mode === 'terminal') {
           // 터미널 모드 대화
           if (awaitingAnswer) {
@@ -1347,10 +1964,7 @@
             return;
           }
 
-          // 단어를 구 표면 근처에 찍기
-          currentTextMesh = createTextOnSphere(text);
-
-          // 특수 명령
+          // 특수 명령 우선 처리
           const lowerText = text.toLowerCase();
           
           // 색상 명령 확인 (우선순위가 높음)
@@ -1360,37 +1974,20 @@
             enterSunMode();
           } else if (lowerText === 'bed') {
             enterBedMode();
-          } else if (lowerText === 'moon') {
-            // Moon: 유튜브 영상 보여주기
-            renderer.domElement.style.opacity = '0';
-            centerContentEl.innerHTML = "";
-            const iframe = document.createElement("iframe");
-            iframe.setAttribute("width", "560");
-            iframe.setAttribute("height", "315");
-            iframe.setAttribute("src", "https://www.youtube.com/embed/fhYpzlqw7lY?si=yvEVYZgbojvFcJJP&autoplay=1&start=33&controls=0&modestbranding=1&rel=0&playsinline=1");
-            iframe.setAttribute("title", "YouTube video player");
-            iframe.setAttribute("frameborder", "0");
-            iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share");
-            iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-            iframe.setAttribute("allowfullscreen", "");
-            centerContentEl.appendChild(iframe);
-            centerContentEl.classList.add("active");
-            backHint.classList.add("active");
           } else if (lowerText === 'star') {
-            // Star: 오디오 재생하고 gif 보여주기
-            renderer.domElement.style.opacity = '0';
-            centerContentEl.innerHTML = "";
-            
-            // 오디오 재생 (변수에 저장)
-            starAudio = new Audio("https://actions.google.com/sounds/v1/human_voices/babies_coo.ogg");
-            starAudio.play().catch(e => console.warn("Audio play failed:", e));
-            
-            const img = document.createElement("img");
-            img.setAttribute("src", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHo5dTI0cHM0ZG1tM3N5ZWR6bHM2MTYwYm1pNWt6dDgzd25yajgybyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/hXTsVGndgr1oMC2F9t/giphy.gif");
-            img.setAttribute("alt", "sleep gif");
-            centerContentEl.appendChild(img);
-            centerContentEl.classList.add("active");
-            backHint.classList.add("active");
+            // Star: 소원/대화 모드 진입
+            enterMoonMode();
+          } else if (lowerText === 'moon') {
+            // Moon: 오디오 재생하고 gif 보여주기
+            showMoonSimple();
+          } else {
+            // 일반 텍스트: 문장을 단어로 분리하여 각각 생성하되, 오른쪽으로 약간씩 치우치게 배치
+            const words = text.split(/\s+/).filter(Boolean);
+            const angleStep = 0.08; // 라디안 단위, 오른쪽 오프셋
+            const downStep = 0.05; // 라디안 단위, 아래쪽(우하향) 기울기
+            words.forEach((w, i) => {
+              createTextOnSphere(w, i, angleStep, downStep);
+            });
           }
 
           currentInput = "";
@@ -1444,6 +2041,35 @@
         }
       });
 
+      // Star preset click (소원/대화 모드)
+      if (starTriggerEl) {
+        starTriggerEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          enterMoonMode();
+        });
+      }
+      // Sun preset click
+      if (sunTriggerEl) {
+        sunTriggerEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          enterSunMode();
+        });
+      }
+      // Moon preset click (간단 연출)
+      if (moonTriggerEl) {
+        moonTriggerEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          showMoonSimple();
+        });
+      }
+      // Bed preset click
+      if (bedTriggerEl) {
+        bedTriggerEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          enterBedMode();
+        });
+      }
+
       // ====== 애니메이션 루프 ======
       function animate() {
         requestAnimationFrame(animate);
@@ -1454,8 +2080,18 @@
 
         // [수정 1] 부드러운 구체 스케일링 적용
         if (Math.abs(currentSphereScale - targetSphereScale) > 0.001) {
-          currentSphereScale = THREE.MathUtils.lerp(currentSphereScale, targetSphereScale, 0.1);
+          const lerpFactor = introActive ? INTRO_SHRINK_LERP : NORMAL_SHRINK_LERP;
+          currentSphereScale = THREE.MathUtils.lerp(currentSphereScale, targetSphereScale, lerpFactor);
           applySphereScale();
+          // 도입 종료 조건: 충분히 목표 크기에 근접하면 종료
+          if (introActive && Math.abs(currentSphereScale - targetSphereScale) < 0.02) {
+            introActive = false;
+          }
+        }
+
+        // 도입 중 약한 반시계 방향 회전 (Z축 기준)
+        if (introActive) {
+          sphere.rotation.z += INTRO_ROT_PER_FRAME; // counter-clockwise on screen
         }
         
         // 모션 블러 효과: 이전 회전 상태를 저장하고 블러 구체에 적용
@@ -1471,6 +2107,11 @@
           blurSphere.rotation.copy(previousSphereRotations[i]);
           blurSphere.scale.copy(sphere.scale);
         });
+
+        // space 모드 idle 시: 구체를 조금 더 빠르게 천천히 회전
+        if (mode === 'space' && currentInput.length === 0) {
+          sphere.rotation.y += 0.0022;
+        }
 
         // 별의 회전 / 반짝임
         starsGroup.rotation.y += 0.0006;
@@ -1490,6 +2131,13 @@
         innerMidStars.material.opacity  = 0.6 + Math.sin(t * 0.9 + 1.8) * 0.1;
         innerBigStars.material.opacity  = 0.6 + Math.sin(t * 1.0 + 2.5) * 0.1;
 
+        // 앵커 회전: space 모드 idle 시 별의 회전을 따르고, 그 외엔 고전(구체) 방식
+        if (mode === 'space' && currentInput.length === 0) {
+          textAnchor.rotation.copy(starsGroup.rotation);
+        } else {
+          textAnchor.rotation.copy(sphere.rotation);
+        }
+
         // [수정 2] 텍스트 위치 및 크기 업데이트 로직
         textMeshes.forEach((textMesh) => {
           // 모든 텍스트의 크기를 구체 스케일에 맞춰 조정
@@ -1503,17 +2151,35 @@
             );
             textMesh.rotation.x += textMesh.userData.rotationSpeed;
             textMesh.rotation.y += textMesh.userData.rotationSpeed * 0.7;
+          } else if (textMesh.userData.isOrbiting) {
+            // Sun 모드: 구 주변 공전
+            const newRadius = getCurrentSurfaceRadius() + textMesh.userData.orbitRadiusOffset;
+            const baseLocal = (textMesh.userData.localDirection || new THREE.Vector3(0,0,1)).clone();
+            const yAxis = new THREE.Vector3(0,1,0);
+            textMesh.userData.orbitAngle += textMesh.userData.orbitSpeed;
+            const rotated = baseLocal.applyAxisAngle(yAxis, textMesh.userData.orbitAngle).normalize();
+            textMesh.position.copy(rotated.clone().multiplyScalar(newRadius));
+            const outwardWorld = textAnchor.localToWorld(rotated.clone().multiplyScalar(newRadius * 2));
+            textMesh.lookAt(outwardWorld);
+            textMesh.rotation.z += textMesh.userData.selfRotateSpeed * 0.5;
           } else {
             // Space 모드: 구체 표면에 붙어있기
             const newRadius = getCurrentSurfaceRadius();
-            const newPosition = textMesh.userData.normalizedDirection.clone().multiplyScalar(newRadius);
-            textMesh.position.copy(newPosition);
-            // 바깥쪽을 바라보도록 (180도 회전)
-            const outwardDirection = newPosition.clone().multiplyScalar(2);
-            textMesh.lookAt(outwardDirection);
-            
-            // 'sun' 모드 전환 시를 대비해 targetPosition도 업데이트
-            textMesh.userData.targetPosition.copy(newPosition);
+            if (textMesh.parent === textAnchor && textMesh.userData.localDirection) {
+              // 앵커 로컬 방향을 따라 반경만 업데이트
+              const localDir = textMesh.userData.localDirection.clone();
+              textMesh.position.copy(localDir.multiplyScalar(newRadius));
+              const outwardWorld = textAnchor.localToWorld(textMesh.userData.localDirection.clone().multiplyScalar(newRadius * 2));
+              textMesh.lookAt(outwardWorld);
+              textMesh.userData.targetPosition.copy(textMesh.getWorldPosition(new THREE.Vector3()));
+            } else {
+              // 기존(레거시) 방식
+              const newPosition = textMesh.userData.normalizedDirection.clone().multiplyScalar(newRadius);
+              textMesh.position.copy(newPosition);
+              const outwardDirection = newPosition.clone().multiplyScalar(2);
+              textMesh.lookAt(outwardDirection);
+              textMesh.userData.targetPosition.copy(newPosition);
+            }
           }
         });
 
@@ -1528,6 +2194,45 @@
       });
 
       animate();
+
+      // ====== 온보딩: 드래그/스크롤 힌트 ======
+      // 힌트 1회성 표시 제어 플래그
+      let dragHintDismissed = false;
+      let scrollHintDismissed = false;
+      let typeHintDismissed = false;
+
+      function showHint(el) {
+        if (!el) return;
+        el.classList.add('visible');
+      }
+      function hideHint(el) {
+        if (!el) return;
+        el.classList.remove('visible');
+      }
+
+      // 초기 도입: 먼저 Scroll 힌트 표시
+      setTimeout(() => {
+        if (!scrollHintDismissed) showHint(hintScroll);
+      }, 600);
+
+      // 드래그 감지 시: Drag 힌트 제거 후 Type 힌트 표시 (단, Scroll이 먼저 끝난 뒤)
+      controls.addEventListener('start', () => {
+        // 도입 종료 (사용자 인터랙션 발생)
+        introActive = false;
+        if (mode !== 'space') return;
+        if (!scrollHintDismissed) return; // 순서 유지: Scroll 이후에 동작
+        if (hintDrag && hintDrag.classList.contains('visible')) {
+          hideHint(hintDrag);
+          dragHintDismissed = true; // 다시는 표시하지 않음
+        } else {
+          dragHintDismissed = true;
+        }
+        setTimeout(() => {
+          if (mode === 'space' && hintType && !hintType.classList.contains('visible') && !typeHintDismissed) {
+            showHint(hintType);
+          }
+        }, 250);
+      });
     </script>
   </body>
 </html>
